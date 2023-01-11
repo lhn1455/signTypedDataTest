@@ -1,6 +1,7 @@
-var Web3 = require("web3");
-var web3 = new Web3(process.env.EC2_NETWORK);
+import Web3 from "web3";
 import { AbiItem } from "web3-utils";
+import hre from "hardhat";
+import { Common, Chain } from "@ethereumjs/common";
 import EIP712_single from "../artifacts/contracts/EIP712_single.sol/EIP712_single.json";
 import {
   SignTypedDataVersion,
@@ -9,15 +10,35 @@ import {
 
 require("dotenv").config();
 
-const admin = web3.eth.accounts.privateKeyToAccount(process.env.GOERLI_ADMIN!);
-const owner = web3.eth.accounts.privateKeyToAccount(process.env.GOERLI_OWNER!);
-const privKey = process.env.GOERLI_OWNER;
-
-web3.eth
-  .getBalance(owner.address)
-  .then((result: any) => console.log("result : ", owner.address));
-
 async function main() {
+  const networkName = hre.network.name;
+  const networkInfo = JSON.parse(JSON.stringify(hre.network.config));
+  const web3 = new Web3(new Web3.providers.HttpProvider(networkInfo.url));
+
+  let common;
+
+  switch (networkName) {
+    case "ec2":
+      common = Common.custom({ chainId: 1337 });
+      break;
+
+    case "goerli":
+      common = new Common({
+        chain: Chain.Goerli,
+      });
+      break;
+    default:
+      throw new Error("This network is not exist");
+      break;
+  }
+
+  const admin = web3.eth.accounts.privateKeyToAccount(networkInfo.accounts[0]);
+  const team = web3.eth.accounts.privateKeyToAccount(networkInfo.accounts[1]);
+  web3.eth.accounts.wallet.add(admin.privateKey);
+  web3.eth
+    .getBalance(admin.address)
+    .then((result: any) => console.log("result : ", result));
+
   const eIP712_single = await new web3.eth.Contract(
     EIP712_single.abi as AbiItem[]
   );
@@ -27,11 +48,11 @@ async function main() {
 
   const signTx = await web3.eth.accounts.signTransaction(
     {
-      from: owner.address,
+      from: admin.address,
       data: tx.encodeABI(),
       gas: "6721975",
     },
-    privKey!
+    admin.privateKey!
   );
   const TxReceipt = await web3.eth.sendSignedTransaction(
     signTx.rawTransaction!
@@ -39,7 +60,10 @@ async function main() {
 
   console.log("TxReceipt:", TxReceipt);
   const contractAddress = TxReceipt.contractAddress;
-  const contract = new web3.eth.Contract(EIP712_single.abi, contractAddress);
+  const contract = new web3.eth.Contract(
+    EIP712_single.abi as AbiItem[],
+    contractAddress
+  );
   const test = await contract.methods.getSet().call();
   const signature =
     "0x588ad70801d0009ce4dc2541c9ea810fd1451bd24483ddf7c6127b18a59495c42b9a608f543895f5a401e02118930269fc637e900fcec59460f33859f537f9541b";
@@ -47,7 +71,7 @@ async function main() {
   const res = await contract.methods
     .executeSetIfSignatureMatch(signature)
     .send({
-      from: owner.address,
+      from: admin.address,
       gasPrice: 20000000000,
       gasLimit: 100000,
       gas: 6721975,

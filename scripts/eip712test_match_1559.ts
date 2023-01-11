@@ -3,11 +3,12 @@ import { AbiItem } from "web3-utils";
 import hre from "hardhat";
 import { Common, Chain } from "@ethereumjs/common";
 import EIP712_match from "../artifacts/contracts/EIP712_match.sol/EIP712_match.json";
-import { Transaction } from "@ethereumjs/tx";
+import { Transaction, FeeMarketEIP1559Transaction } from "@ethereumjs/tx";
 import {
   SignTypedDataVersion,
   recoverTypedSignature,
 } from "@metamask/eth-sig-util";
+import { BlockForkEvent } from "@ethersproject/abstract-provider";
 
 require("dotenv").config();
 
@@ -41,18 +42,19 @@ async function main() {
     .then((result: any) => console.log("result : ", result));
 
   const eIP712_match = new web3.eth.Contract(EIP712_match.abi as AbiItem[]);
-  const tx = eIP712_match.deploy({
-    data: EIP712_match.bytecode,
-  });
+  // const tx = eIP712_match.deploy({
+  //   data: EIP712_match.bytecode,
+  // });
 
   const signTx = await web3.eth.accounts.signTransaction(
     {
       from: Buyer.address,
-      data: tx.encodeABI(),
+      data: EIP712_match.bytecode,
       gas: "6721975",
     },
     Buyer.privateKey
   );
+  console.log("1");
   const TxReceipt = await web3.eth.sendSignedTransaction(
     signTx.rawTransaction!
   );
@@ -64,6 +66,9 @@ async function main() {
     contractAddress
   );
   const test = await contract.methods.getSet().call();
+  const gas = await contract.methods.set(Buyer.address).estimateGas();
+  console.log("gas", gas);
+
   const sellerSignature =
     "0xff421c61889a95d210fdcfeeb15db24bb79a3235b242ec1dbbd76dede79d87e62b423c988bbcbe9a97a886eb7de1a6736e2ab43c9b7e6fc6967e9f641c9ca7431c";
 
@@ -75,36 +80,56 @@ async function main() {
     .encodeABI();
   console.log(bytecodeData);
 
+  const bytecodeSet = await contract.methods.set(Buyer.address).encodeABI();
+  console.log(bytecodeSet);
+
   const txCount = await web3.eth.getTransactionCount(Buyer.address);
-  const legacyObject = {
+  const txObject = {
+    type: "0x02",
     nonce: web3.utils.toHex(txCount),
     from: Buyer.address,
     to: contractAddress,
-    gasPrice: web3.utils.toHex(20000000000),
     gasLimit: web3.utils.toHex(6721975),
     data: bytecodeData,
     value: "0x00",
+    //추가
+    maxFeePerGas: web3.utils.toHex(200000000000),
+    maxPriorityFeePerGas: web3.utils.toHex(20000000000),
   };
 
-  const txForSign = new Transaction(legacyObject, { common });
+  const block = await web3.eth.getBlock("pending");
+  // block.baseFeePerGas
+  console.log("base : ", block.baseFeePerGas);
+  // const maxFee = 2 * block.baseFeePerGas! + maxPriorityFeePerGas;
+  const maxPriorityFeePerGas = web3.utils.toHex(
+    web3.utils.toWei("1.5", "gwei")
+  );
+  // const txObject = {$
+  //   type: "0x02",
+  //   chainId: "0x05",
+  //   nonce: web3.utils.toHex(txCount),
+  //   from: Buyer.address,
+  //   to: contractAddress,
+  //   gasLimit: web3.utils.toHex(6721975),
+  //   data: bytecodeSet,
+  //   value: "0x00",
+  //   accessList: [],
+  //   maxPriorityFeePerGas: web3.utils.toHex(web3.utils.toWei("1.5", "gwei")),
+  //   maxFeePerGas: web3.utils.toHex(web3.utils.toWei("1.5", "gwei")),
+  // };
+
+  const txForSign = FeeMarketEIP1559Transaction.fromTxData(txObject, {
+    common,
+  });
+
+  // const txForSign = new Transaction(txObject, { common });
   const privateKey = Buffer.from(Buyer.privateKey.substring(2), "hex");
   const signedTx = txForSign.sign(privateKey);
   const serializedRawTx = signedTx.serialize().toString("hex");
   // console.log("serializedTx : ", serializedRawTx);
 
   const receipt = await web3.eth.sendSignedTransaction("0x" + serializedRawTx);
-
   console.log("receipt : ", receipt);
-
-  // const res = await contract.methods
-  //   .executeSetIfSignatureMatch(sellerSignature, buyerSignature)
-  //   .send({
-  //     from: Buyer.address,
-  //     gasPrice: 20000000000,
-  //     gasLimit: 100000,
-  //     gas: 6721975,
-  //   });
-  // console.log(res);
 
   const typedData = {
     types: {
