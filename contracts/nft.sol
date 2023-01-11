@@ -34,7 +34,7 @@ contract nft is ERC721URIStorage {
     }
 
     function tokenURI(uint256 tokenId) public view virtual override returns (string memory){
-        if(block.timestamp >= time + 3 minutes) {
+        if(block.timestamp >= time + 2 minutes) {
             return super.tokenURI(tokenId);
 
         } else {

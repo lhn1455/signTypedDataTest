@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0
 
 pragma solidity >=0.7.0 <0.9.0;
+import "./nft.sol";
 
-contract EIP712_match {
+contract EIP712_match is nft {
     
     address x;
 
@@ -18,7 +19,7 @@ contract EIP712_match {
         address wallet;
     }
 
-    struct Mail {
+    struct Order {
         Person from;
         Person to;
         string contents;
@@ -39,8 +40,8 @@ contract EIP712_match {
         "Person(string name,address wallet)"
     );
 
-    bytes32 constant MAIL_TYPEHASH = keccak256(
-        "Mail(Person from,Person to,string contents)Person(string name,address wallet)"
+    bytes32 constant ORDER_TYPEHASH = keccak256(
+        "Order(Person from,Person to,string contents)Person(string name,address wallet)"
     );
 
     bytes32 DOMAIN_SEPARATOR;
@@ -72,12 +73,12 @@ contract EIP712_match {
         ));
     }
 
-    function hash(Mail memory mail) internal pure returns (bytes32) {
+    function hash(Order memory order) internal pure returns (bytes32) {
         return keccak256(abi.encode(
-            MAIL_TYPEHASH,
-            hash(mail.from),
-            hash(mail.to),
-            keccak256(bytes(mail.contents))
+            ORDER_TYPEHASH,
+            hash(order.from),
+            hash(order.to),
+            keccak256(bytes(order.contents))
         ));
     }
     function splitSignature(bytes memory sig) internal pure returns (uint8, bytes32, bytes32)
@@ -100,7 +101,7 @@ contract EIP712_match {
     }
     function executeSetIfSignatureMatch(
         bytes memory _sellerSig, bytes memory _buyerSig
-    ) external returns(address) {
+    ) external returns(uint256) {
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -111,7 +112,7 @@ contract EIP712_match {
         (v, r, s)= splitSignature(_buyerSig);
         Signature memory buyerSig = Signature(v, r, s, _buyerSig);
         
-        Mail memory sellerMail = Mail({
+        Order memory sellerOrder = Order({
             from: Person({
                name: "Cow",
                wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826
@@ -123,7 +124,7 @@ contract EIP712_match {
             contents: "Mint & Transfer"
         });
 
-        Mail memory buyerMail = Mail({
+        Order memory buyerOrder = Order({
             from: Person({
                name: "Cow",
                wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826
@@ -135,16 +136,17 @@ contract EIP712_match {
             contents: "Mint & Transfer"
         });
 
-        bytes32 sellerDigest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hash(sellerMail)));
-        bytes32 buyerDigest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hash(buyerMail)));
+        bytes32 sellerDigest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hash(sellerOrder)));
+        bytes32 buyerDigest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hash(buyerOrder)));
         address seller = ecrecover(sellerDigest, sellerSig.v, sellerSig.r, sellerSig.s);
         address buyer = ecrecover(buyerDigest, buyerSig.v, buyerSig.r, buyerSig.s);
 
         require(seller != buyer, "No self-trading");
         require(sellerDigest == buyerDigest, "invaild contents");
-        
+        require(buyer == msg.sender, "invaild contents");
         set(buyer);
-        return buyer;
+        uint256 tokenId = mintNFT(buyer, "https://ipfs.io/ipfs/QmSFXTq9kcCLrNk9QbEWR6REnidR6GjaovWGMW344Y6ME9/4.json");
+        return tokenId;
         
     }
 
